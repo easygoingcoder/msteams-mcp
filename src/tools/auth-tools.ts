@@ -27,6 +27,7 @@ import { ensureAuthenticated, forceNewLogin, getAuthStatus } from '../browser/au
 
 export const LoginInputSchema = z.object({
   forceNew: z.boolean().optional().default(false),
+  email: z.string().optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,6 +43,10 @@ const loginToolDefinition: Tool = {
       forceNew: {
         type: 'boolean',
         description: 'Force a new login even if a session exists (default: false)',
+      },
+      email: {
+        type: 'string',
+        description: 'Optional account email. When provided, skips silent SSO and opens a visible browser pre-filled with this email (use to switch accounts when the default SSO picks the wrong one).',
       },
     },
   },
@@ -74,9 +79,37 @@ async function handleLogin(
     ctx.server.resetBrowserState();
   }
 
-  if (input.forceNew) {
+  if (input.forceNew || input.email) {
     clearSessionState();
     clearTokenCache();
+  }
+
+  // When an explicit email is provided, skip silent SSO entirely
+  // (SSO would auto-pick the Windows account, which is exactly what we want to avoid).
+  if (input.email) {
+    const browserManager = await createBrowserContext({ headless: false });
+    ctx.server.setBrowserManager(browserManager);
+
+    try {
+      await browserManager.context.clearCookies();
+      await forceNewLogin(
+        browserManager.page,
+        browserManager.context,
+        (msg) => log.info('login', msg),
+        input.email,
+      );
+    } finally {
+      await closeBrowser(browserManager, true);
+      ctx.server.resetBrowserState();
+    }
+
+    ctx.server.markInitialised();
+    return {
+      success: true,
+      data: {
+        message: `Login completed for ${input.email}. Session has been saved.`,
+      },
+    };
   }
 
   // Fast path: if tokens are still valid, skip browser entirely

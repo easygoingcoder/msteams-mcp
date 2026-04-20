@@ -226,8 +226,8 @@ export async function getAuthStatus(page: Page): Promise<AuthStatus> {
     };
   }
 
-  // If on Teams domain, check for authenticated content
-  if (currentUrl.includes('teams.microsoft.com')) {
+  // If on any Teams domain, check for authenticated content
+  if (isTeamsUrl(currentUrl)) {
     const hasContent = await hasAuthenticatedContent(page);
     return {
       isAuthenticated: hasContent,
@@ -405,7 +405,7 @@ export async function waitForManualLogin(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Timeout for waiting for MSAL to refresh tokens (ms). */
-const TOKEN_REFRESH_WAIT_TIMEOUT_MS = 20000;
+const TOKEN_REFRESH_WAIT_TIMEOUT_MS = 60000;
 
 /** Interval for checking if tokens have been refreshed (ms). */
 const TOKEN_REFRESH_POLL_INTERVAL_MS = 1000;
@@ -581,7 +581,8 @@ export async function ensureAuthenticated(
 export async function forceNewLogin(
   page: Page,
   context: BrowserContext,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  email?: string
 ): Promise<void> {
   const log = onProgress ?? console.log;
 
@@ -591,6 +592,12 @@ export async function forceNewLogin(
   await context.clearCookies();
 
   // Navigate and wait for login
-  await navigateToTeams(page);
+  if (email) {
+    const url = `${TEAMS_URL}/?login_hint=${encodeURIComponent(email)}`;
+    log(`Navigating with login hint: ${email}`);
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+  } else {
+    await navigateToTeams(page);
+  }
   await waitForManualLogin(page, context, undefined, onProgress);
 }

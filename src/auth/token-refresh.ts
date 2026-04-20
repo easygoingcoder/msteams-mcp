@@ -62,19 +62,16 @@ export async function refreshTokensViaBrowser(): Promise<Result<TokenRefreshResu
     ));
   }
 
-  // Get current token expiry for comparison
+  // Get current token expiry for comparison (may be missing on first use after
+  // login for tenants where Teams web doesn't eagerly cache the Substrate token).
   const beforeToken = extractSubstrateToken();
-  if (!beforeToken) {
-    log.warn('token-refresh', 'No Substrate token found in session - cannot refresh, browser login required');
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'ACTION REQUIRED: No token found in session. You MUST call teams_login to authenticate.',
-    ));
+  if (beforeToken) {
+    log.debug('token-refresh', `Current token expires at ${beforeToken.expiry.toISOString()} (${Math.round((beforeToken.expiry.getTime() - Date.now()) / 60000)} mins remaining)`);
+  } else {
+    log.info('token-refresh', 'No Substrate token in session yet - attempting HTTP refresh to mint one from the refresh token');
   }
 
-  log.debug('token-refresh', `Current token expires at ${beforeToken.expiry.toISOString()} (${Math.round((beforeToken.expiry.getTime() - Date.now()) / 60000)} mins remaining)`);
-
-  const previousExpiry = beforeToken.expiry;
+  const previousExpiry = beforeToken?.expiry ?? new Date(0);
   refreshInProgress = true;
 
   try {
