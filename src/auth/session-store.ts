@@ -264,21 +264,34 @@ const TEAMS_ORIGINS = [
   'https://teams.cloud.microsoft', // New Teams URL
 ];
 
-/**
- * Gets the Teams origin from session state.
- * Checks multiple known Teams domains to support government clouds.
- */
 export function getTeamsOrigin(state: SessionState): SessionState['origins'][number] | null {
   if (!state.origins) return null;
-  
-  // Try known Teams origins in priority order
-  for (const knownOrigin of TEAMS_ORIGINS) {
-    const origin = state.origins.find(o => o.origin === knownOrigin);
-    if (origin) return origin;
+
+  const teamsOrigins = state.origins.filter(o =>
+    TEAMS_ORIGINS.includes(o.origin) ||
+    o.origin.includes('teams.microsoft') ||
+    o.origin.includes('teams.cloud')
+  );
+
+  if (teamsOrigins.length === 0) return null;
+
+  const primary = TEAMS_ORIGINS
+    .map(known => teamsOrigins.find(o => o.origin === known))
+    .find((o): o is SessionState['origins'][number] => o !== undefined)
+    ?? teamsOrigins[0];
+
+  const seen = new Set<string>();
+  const mergedLocalStorage: SessionState['origins'][number]['localStorage'] = [];
+  for (const o of teamsOrigins) {
+    for (const entry of o.localStorage ?? []) {
+      if (seen.has(entry.name)) continue;
+      seen.add(entry.name);
+      mergedLocalStorage.push(entry);
+    }
   }
-  
-  // Fallback: find any origin containing 'teams.microsoft'
-  return state.origins.find(o => 
-    o.origin.includes('teams.microsoft') || o.origin.includes('teams.cloud')
-  ) ?? null;
+
+  return {
+    ...primary,
+    localStorage: mergedLocalStorage,
+  };
 }
