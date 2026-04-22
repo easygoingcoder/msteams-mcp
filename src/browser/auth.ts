@@ -371,6 +371,8 @@ export async function waitForManualLogin(
         await showLoginProgress(page, 'saving');
       }
 
+      await nudgeMsalTokenAcquisition(page, log);
+
       // Wait for MSAL to store tokens in localStorage before saving session.
       // After a fresh interactive login, Teams UI can appear before token
       // acquisition completes — polling ensures tokens are captured.
@@ -398,6 +400,32 @@ export async function waitForManualLogin(
   }
 
   throw new Error('Authentication timeout: user did not complete login within the allowed time');
+}
+
+async function nudgeMsalTokenAcquisition(
+  page: Page,
+  log: (message: string) => void,
+): Promise<void> {
+  try {
+    await page.evaluate(async () => {
+      const routes = ['/activity', '/search', '/conversations/recent'];
+      for (const route of routes) {
+        try {
+          window.location.hash = route;
+          await new Promise((r) => setTimeout(r, 1500));
+        } catch { /* ignore */ }
+      }
+      try {
+        await fetch('https://substrate.office.com/search/api/v1/query', {
+          method: 'GET',
+          credentials: 'include',
+        });
+      } catch { /* ignore */ }
+    });
+    await page.waitForTimeout(2000);
+  } catch (err) {
+    log(`Token-acquisition nudge failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
