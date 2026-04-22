@@ -603,9 +603,6 @@ export async function ensureAuthenticated(
   }
 }
 
-/**
- * Forces a new login by clearing session and navigating to Teams.
- */
 export async function forceNewLogin(
   page: Page,
   context: BrowserContext,
@@ -616,8 +613,30 @@ export async function forceNewLogin(
 
   log('Starting fresh login...');
 
-  // Clear cookies to force re-authentication
   await context.clearCookies();
+
+  const MSAL_ORIGINS = [
+    'https://teams.microsoft.com',
+    'https://teams.cloud.microsoft',
+  ];
+  for (const origin of MSAL_ORIGINS) {
+    try {
+      await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await page.evaluate(() => {
+        try { localStorage.clear(); } catch { /* ignore */ }
+        try { sessionStorage.clear(); } catch { /* ignore */ }
+        try {
+          if ('indexedDB' in window) {
+            for (const name of ['msal.cache', 'msalcache']) {
+              try { indexedDB.deleteDatabase(name); } catch { /* ignore */ }
+            }
+          }
+        } catch { /* ignore */ }
+      });
+    } catch (err) {
+      log(`Storage-clear step on ${origin} skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   // Navigate and wait for login
   if (email) {
